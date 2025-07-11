@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>BeatIT</title>
+    <link rel="icon" type="image/x-icon" href="icon.svg" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Material Icons for Trash -->
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-color: #e8e8f6;
+      }
+      .text-brand {
+        color: #5a0fc8;
+      }
+      .bg-brand {
+        background-color: #5a0fc8;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100">
+    <header
+      class="bg-white shadow py-4 px-10 flex items-center justify-between"
+    >
+      <h1 class="text-2xl font-black flex items-center text-brand">BEAT IT</h1>
+      <a href="/notification">
+        <span class="material-icons text-brand">notifications</span>
+      </a>
+    </header>
+
+    <main class="space-y-10 max-w-xl mx-auto p-6">
+      <!-- Relay 1 -->
+      <div class="rounded-xl bg-white shadow overflow-hidden">
+        <div class="flex items-center justify-between p-5">
+          <div>
+            <h1 class="text-xl font-semibold">Socket 1</h1>
+            <p>
+              Status:
+              <span id="relay1">Off</span>
+            </p>
+          </div>
+          <label class="relative inline-block w-12 h-6">
+            <input type="checkbox" id="switch1" class="opacity-0 w-0 h-0" />
+            <span
+              class="absolute cursor-pointer inset-0 bg-gray-300 rounded-full transition-colors duration-200"
+            ></span>
+            <span
+              class="absolute left-0 top-0 w-6 h-6 bg-white border rounded-full shadow transform transition-transform duration-200"
+            ></span>
+          </label>
+        </div>
+
+        <!-- Schedule Section -->
+        <div class="bg-slate-100 p-5">
+          <h2 class="text-lg font-medium mb-2">🕒 Schedule</h2>
+          <form id="scheduleForm1" class="flex items-center space-x-2 mb-4">
+            <input
+              type="time"
+              class="border rounded p-1 flex-1"
+              name="time"
+              required
+            />
+            <select class="border rounded p-1" name="state">
+              <option value="on">ON</option>
+              <option value="off">OFF</option>
+            </select>
+            <button type="submit" class="bg-brand text-white px-3 py-1 rounded">
+              Add
+            </button>
+          </form>
+          <ul id="scheduleList1" class="space-y-2 p-0 list-none"></ul>
+        </div>
+      </div>
+    </main>
+
+    <script type="module">
+      import { firebaseConfig } from "./config.js";
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+      import {
+        getDatabase,
+        ref as rtdbRef,
+        onValue,
+        runTransaction,
+        push,
+        set,
+        get,
+        remove,
+      } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-database.js";
+      import {
+        getFirestore,
+        collection,
+        addDoc,
+        serverTimestamp,
+      } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+      import {
+        getAuth,
+        signInAnonymously,
+      } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
+
+      // Initialize Firebase SDKs
+      const app = initializeApp(firebaseConfig);
+      const dbRT = getDatabase(app);
+      const dbFS = getFirestore(app);
+      const auth = getAuth(app);
+
+      // Anonymous sign-in for Firestore writes
+      signInAnonymously(auth)
+        .then(() => console.log("✅ Signed in anonymously"))
+        .catch((err) => console.error("❌ Auth error:", err));
+
+      const logsCol = collection(dbFS, "notifications");
+
+      // Log helper
+      async function logToggle(relayId, newState) {
+        try {
+          const docRef = await addDoc(logsCol, {
+            relayId,
+            newState,
+            timestamp: serverTimestamp(),
+          });
+          console.log("📝 Logged:", docRef.id);
+        } catch (e) {
+          console.error("❌ Log error:", e);
+        }
+      }
+
+      // Relay setup + logging
+      function setupRelay(relayNum, switchEl, statusEl) {
+        const stateRef = rtdbRef(dbRT, `relay${relayNum}/state`);
+
+        onValue(stateRef, (snap) => {
+          const val = snap.val() || false;
+          switchEl.checked = val;
+          statusEl.innerText = val ? "On" : "Off";
+          const knob = switchEl.nextElementSibling.nextElementSibling;
+          knob.style.transform = val ? "translateX(100%)" : "translateX(0)";
+          switchEl.nextElementSibling.style.backgroundColor = val
+            ? "#5a0fc8"
+            : "#d1d5db";
+        });
+
+        switchEl.addEventListener("change", () =>
+          runTransaction(stateRef, (cur) => {
+            const nxt = !cur;
+            logToggle(relayNum, nxt);
+            return nxt;
+          })
+        );
+
+        return stateRef;
+      }
+
+      // Initialize Relay 1
+      const switch1 = document.getElementById("switch1");
+      const status1 = document.getElementById("relay1");
+      const stateRef1 = setupRelay(1, switch1, status1);
+
+      // Schedule logic
+      const scheduleForm = document.getElementById("scheduleForm1");
+      const scheduleList = document.getElementById("scheduleList1");
+      const scheduleRef = rtdbRef(dbRT, "relay1/schedule");
+
+      scheduleForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const time = scheduleForm.time.value;
+        const state = scheduleForm.state.value === "on";
+        const newRef = push(scheduleRef);
+        set(newRef, { time, state });
+        scheduleForm.reset();
+      });
+
+      onValue(scheduleRef, (snap) => {
+        scheduleList.innerHTML = "";
+        snap.forEach((child) => {
+          const { time, state } = child.val();
+          const key = child.key;
+          const li = document.createElement("li");
+          li.className = "flex items-center justify-between p-2 rounded";
+          li.innerHTML = `
+            <span>${time} → Turn ${state ? "ON" : "OFF"}</span>
+            <button class="material-icons text-gray-600 hover:text-red-600">delete</button>
+          `;
+          li.querySelector("button").onclick = () =>
+            remove(rtdbRef(dbRT, `relay1/schedule/${key}`));
+          scheduleList.appendChild(li);
+        });
+      });
+
+      // Scheduler loop + logging
+      setInterval(async () => {
+        const now = new Date().toTimeString().slice(0, 5);
+        const snap = await get(scheduleRef);
+        if (!snap.exists()) return;
+        snap.forEach((child) => {
+          const { time, state } = child.val();
+          if (time === now) {
+            set(stateRef1, state);
+            logToggle(1, state);
+          }
+        });
+      }, 60000);
+    </script>
+  </body>
+</html>

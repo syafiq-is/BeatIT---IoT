@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BeatIT</title>
+    <link rel="icon" type="image/x-icon" href="icon.svg" />
+    <!-- Tailwind -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- Material Icons -->
+    <link
+      href="https://fonts.googleapis.com/icon?family=Material+Icons"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        background-color: #e8e8f6;
+      }
+      .text-brand {
+        color: #5a0fc8;
+      }
+      .bg-brand {
+        background-color: #5a0fc8;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 min-h-screen flex flex-col">
+    <header class="bg-white shadow py-4 px-10 flex items-baseline">
+      <a href="/">
+        <span class="material-icons mr-4 text-brand">arrow_back</span>
+      </a>
+      <h1 class="text-2xl font-bold flex items-center">Back</h1>
+    </header>
+
+    <main class="flex-1 overflow-auto p-6">
+      <h1 class="text-2xl font-bold flex items-center mb-4">Notification</h1>
+      <ul id="notificationsList" class="space-y-4"></ul>
+    </main>
+
+    <!-- Firebase App + Firestore SDK -->
+    <script type="module">
+      import { firebaseNotificationConfig } from "./config.js";
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
+      import {
+        getFirestore,
+        collection,
+        query,
+        orderBy,
+        limit,
+        onSnapshot,
+        Timestamp,
+      } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
+
+      // Init
+      const app = initializeApp(firebaseNotificationConfig);
+      const db = getFirestore(app);
+
+      // Reference the 'notifications' collection, latest 50 first
+      const notificationsCol = collection(db, "notifications");
+      const q = query(
+        notificationsCol,
+        orderBy("timestamp", "desc"),
+        limit(50)
+      );
+
+      const listEl = document.getElementById("notificationsList");
+
+      // Helper: format Firestore Timestamp to "HH:MM:SS, YYYY‑MM‑DD"
+      function fmt(ts) {
+        if (!(ts instanceof Timestamp)) return "";
+        const d = ts.toDate();
+        return d.toLocaleString("en-GB", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+        });
+      }
+
+      // Real‑time listener
+      onSnapshot(q, (snapshot) => {
+        listEl.innerHTML = ""; // clear
+        snapshot.forEach((doc) => {
+          const { relayId, newState, timestamp } = doc.data();
+          const li = document.createElement("li");
+          li.className =
+            "bg-white p-4 rounded-lg shadow flex justify-between items-center";
+
+          // Message text
+          const msg = document.createElement("div");
+          msg.innerHTML = `
+            <span class="font-semibold">Relay ${relayId}</span>
+            turned
+            <span class="text-${newState ? "green" : "red"}-600 font-medium">${
+            newState ? "ON" : "OFF"
+          }</span>
+          `;
+
+          // Timestamp
+          const time = document.createElement("time");
+          time.className = "text-gray-500 text-sm";
+          time.textContent = fmt(timestamp);
+
+          li.append(msg, time);
+          listEl.appendChild(li);
+        });
+      });
+    </script>
+  </body>
+</html>
